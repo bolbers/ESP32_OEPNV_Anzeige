@@ -11,6 +11,7 @@ https://shop.t-skylt.se/
 
 https://github.com/CarlSchwedes/departure_monitor
 
+![departure-monitor.jpg](https://github.com/CarlSchwedes/departure_monitor/blob/main/img/departure_monitor.jpg?raw=true)
 
 WIP
 ToDo:
