@@ -4,7 +4,7 @@
 BVG Abfahrtsanzeiger aus 2 LED Matrix Displays 64x32 mit HUB75 Schnittstelle und einem ESP32.
 
 
-![WIP01]https://raw.githubusercontent.com/bolbers/ESP32_OEPNV_Anzeige/refs/heads/main/images/20260204_002005.jpg)
+![WIP01.jpg](https://github.com/bolbers/ESP32_OEPNV_Anzeige/blob/main/images/20260204_002005.jpg)
 
 
 WIP
