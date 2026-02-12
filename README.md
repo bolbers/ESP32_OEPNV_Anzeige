@@ -26,7 +26,8 @@ https://shop.t-skylt.se/
 
 ![IMG_3693.jpg](https://shop.t-skylt.se/cdn/shop/files/IMG_3693.jpg?v=1733163888&width=550)
 
-https://github.com/CarlSchwedes/departure_monitor
+
+& inspiriert durch: https://github.com/CarlSchwedes/departure_monitor
 
 ![departure-monitor.jpg](https://github.com/CarlSchwedes/departure_monitor/blob/main/img/departure_monitor.jpg?raw=true)
 
