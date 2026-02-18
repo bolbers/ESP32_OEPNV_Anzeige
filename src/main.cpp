@@ -1,19 +1,18 @@
 #include <WiFi.h>
 #include <WiFiMulti.h>                             
 #include <HTTPClient.h>
-#include <ArduinoJson.h>                      // V1.12.0
-#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>  // V3.0.13
+#include <ArduinoJson.h>                      
+#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>  
 #include <time.h>
 
-//Boardlib ESP32 by espressif V 3.3.5
 
 /* =====================================================
    ===================== WIFI =========================
    ===================================================== */
 WiFiMulti wifiMulti;
 
-const char* ssid1     = "mywifi";
-const char* password1 = "mypass";
+const char* ssid1     = ".home@olbers.net";
+const char* password1 = "";
 
 const char* ssid2     = "berlin.freifunk.net";
 const char* password2 = "";
@@ -25,8 +24,9 @@ const char* password3 = "";
    ===================== BVG v6 API ===================
    ===================================================== */
 const char* bvgUrl =
-  "https://v6.bvg.transport.rest/stops/900180521/departures?results=4&duration=830&lines=true&language=de";
-
+  "https://v6.bvg.transport.rest/stops/900180521/departures?results=4&duration=830&lines=true&language=de"; //Betonwerk
+  //"https://v6.bvg.transport.rest/stops/900086161/departures?results=4&duration=830&lines=true&language=de"; // Otisstr U6
+ 
 /* =====================================================
    ===================== HUB75 PINS ===================
    ===================================================== */
@@ -86,6 +86,7 @@ struct Departure {
   String destination;
   String product;
   int minutes;
+  String remarktext; 
 };
 
 Departure departures[ROW_COUNT];
@@ -208,13 +209,6 @@ const uint8_t font5x7[][5] = {
 uint8_t getCharIndex(char c) {
   // Serial.printf("[CHAR] %d ",c);
   switch(c) {
-    case 'ä': return 127; 
-    case 'ö': return 128;
-    case 'ü': return 129;
-    case 'Ä': return 130;
-    case 'Ö': return 131;
-    case 'Ü': return 132;
-    case 'ß': return 133;
     default:
       if (c >= 32 && c <= 126) return c - 32;
       return 0; // Leerzeichen
@@ -269,6 +263,97 @@ void drawScrollingString(int x,int y,const String&t,uint16_t c,ScrollState&st){
 
   drawString5x7(x-st.offset,y,t,c);
   drawString5x7(x-st.offset+w+20,y,t,c);
+}
+
+////////////////////////////////////////////////////////////
+// CLIPPED SCROLL
+////////////////////////////////////////////////////////////
+
+void drawCharClipped(
+  int x, int y,
+  char c,
+  uint16_t color,
+  int clipX,
+  int clipW
+) {
+  if (c < 32 || c > 127) return;
+  const uint8_t* chr = font5x7[c - 32];
+
+  for (int i = 0; i < 5; i++) {
+    for (int j = 0; j < 7; j++) {
+      if (chr[i] & (1 << j)) {
+        int px = x + i;
+        if (px >= clipX && px < clipX + clipW) {
+          display->drawPixel(px, y + j, color);
+        }
+      }
+    }
+  }
+}
+
+void drawStringClipped(
+  int x, int y,
+  String text,
+  uint16_t color,
+  int clipX,
+  int clipW
+) {
+  for (int i = 0; i < text.length(); i++) {
+    drawCharClipped(
+      x + i * CHAR_WIDTH,
+      y,
+      text[i],
+      color,
+      clipX,
+      clipW
+    );
+  }
+}
+
+int textWidthPx(const String &s) {
+  return s.length() * CHAR_WIDTH;
+}
+
+
+////////////////////////////////////////////////////////////
+// SCROLL MIT CLIPPING
+////////////////////////////////////////////////////////////
+
+void drawScrollingText(
+  int areaX,
+  int areaWidth,
+  int y,
+  const String& text,
+  uint16_t color,
+  ScrollState& state
+) {
+  int textWidth = textWidthPx(text);
+
+  if (textWidth <= areaWidth) {
+    drawStringClipped(areaX, y, text, color, areaX, areaWidth);
+    state.offset = 0;
+    return;
+  }
+
+  unsigned long now = millis();
+
+  if (state.pauseUntil > now) {
+    drawStringClipped(areaX - state.offset, y, text, color, areaX, areaWidth);
+    return;
+  }
+
+  if (now - state.lastMove > SCROLL_SPEED) {
+    state.offset++;
+    state.lastMove = now;
+
+    if (state.offset > textWidth + 20) {
+      state.offset = 0;
+      state.pauseUntil = now + SCROLL_PAUSE;
+    }
+  }
+
+  drawStringClipped(areaX - state.offset, y, text, color, areaX, areaWidth);
+  drawStringClipped(areaX - state.offset + textWidth + 20, y, text, color, areaX, areaWidth);
 }
 
 /* =====================================================
@@ -339,14 +424,6 @@ String decodeUtf8(String input) {  //Replace auf ungenutze Zeichen < 126 in der 
   input.replace("\u00dc", "}"); // Ü
   input.replace("\u00df", "~"); // ß
 
- // input.replace("\u00e4", "ä"); // ä
- // input.replace("\u00f6", "ö"); // ö
- // input.replace("\u00fc", "ü"); // ü
- // input.replace("\u00c4", "Ä"); // Ä
- // input.replace("\u00d6", "Ö"); // Ö
- // input.replace("\u00dc", "Ü"); // Ü
- // input.replace("\u00df", "ß"); // ß
-
   for (int i=0;i<input.length();i++)
     if (input[i]<32 || input[i]>126) input[i]='?';
   return input;
@@ -363,34 +440,44 @@ void fetchDepartures() {
 
   if(httpCode == 200) {
     Serial.println("[DEBUG] API-Request erfolgreich");
-    DynamicJsonDocument doc(8192);
+    JsonDocument doc;
     deserializeJson(doc, http.getString());
     JsonArray arr = doc["departures"].as<JsonArray>();
-
+    
     for(int i=0; i<ROW_COUNT && i<arr.size(); i++){
-      if(arr["remarks"]){
-      for(JsonObject r:doc["remarks"].as<JsonArray>()){
-        if(r["type"]=="warning"){
-          warningText=r["text"].as<String>();
-          hasWarning=true;
-          break;
-        }
-      }
-    }
-    if(i<(hasWarning?ROW_COUNT-1:ROW_COUNT)){
-      
+  
       departures[i].line = arr[i]["line"]["name"].as<String>();
       departures[i].destination = arr[i]["direction"].as<String>();
-      departures[i].product = arr[i]["line"]["product"].as<String>();
+      departures[i].product    = arr[i]["line"]["product"].as<String>();
       int min_to_arrive = getMinutesToArrival(arr[i]["when"].as<String>());
       departures[i].minutes = constrain(min_to_arrive,-99,999);
+      
         Serial.print ("[DEBUG] Linie "); Serial.print (departures[i].line.c_str()); Serial.print (" ");
         Serial.print (departures[i].destination.c_str()); Serial.print (" "); Serial.print (departures[i].product.c_str());
         Serial.print (" in "); Serial.print (departures[i].minutes);
         Serial.println (" min");
       departures[i].destination = decodeUtf8(departures[i].destination);
+      
+
+
+      if (hasWarning) {
+        break;
+      }  
+      else{
+      JsonArray mdata = arr[i]["remarks"].as<JsonArray>();
+      for(int x=0; x<mdata.size(); x++){
+       if(mdata[x]["type"].as<String>() == "warning"){   //warning
+          //Serial.print(mdata[x]["type"].as<String>());
+          departures[i].remarktext = mdata[x]["text"].as<String>();
+          warningText = decodeUtf8(departures[i].remarktext);
+          //Serial.print (departures[i].remarktext.c_str());
+          hasWarning=true;
+          break;
+       }           
+      }        
+      }
     }
-  }
+  
   } else {
     Serial.printf("[DEBUG] API-Request Fehler: %d\n", httpCode);
   }
@@ -415,7 +502,70 @@ void drawRow(const Departure& d, int y) {
   display->printf("%3d", d.minutes);
 }
 
+void drawDepartureRow(const Departure& d, int row) {
+  int y = HEADER_HEIGHT + row * ROW_HEIGHT;
+
+  // Linie (0–20 px)
+  display->setCursor(0, y);
+  display->setTextColor(getLineColor(d.product));
+  display->print(d.line);
+
+  // Ziel (22–108 px)
+  drawScrollingText(
+    22,
+    86,
+    y,
+    d.destination,
+    display->color565(200,200,200),
+    rowScroll[row]
+  );
+
+  // Minuten (110–128 px)
+  display->setCursor(110, y);
+  // display->setTextColor(display->color565(255,255,255));
+    if (d.minutes < 1) {
+    display ->setTextColor(display->color565(255,0,0));
+  }
+  else {
+    display->setTextColor(display->color565(255, 255, 255));
+  }
+  display->printf("%3d", d.minutes);
+}
+
+////////////////////////////////////////////////////////////
+
+void drawWarningRow() {
+  int y = HEADER_HEIGHT + 2 * ROW_HEIGHT;
+
+  drawScrollingText(
+    0,
+    128,
+    y,
+    warningText,
+    display->color565(255,140,0),
+    warningScroll
+  );
+}
+
+////////////////////////////////////////////////////////////
+
 void drawScreen() {
+  display->clearScreen();
+  drawHeaderTime();
+
+  if (hasWarning) {
+    drawDepartureRow(departures[0],0);
+    drawDepartureRow(departures[1],1);
+    drawWarningRow();
+  } else {
+    drawDepartureRow(departures[0],0);
+    drawDepartureRow(departures[1],1);
+    drawDepartureRow(departures[2],2);
+  }
+}
+
+
+void drawoldScreen() {
   display->clearScreen();
   drawHeaderTime();
 
@@ -426,19 +576,20 @@ void drawScreen() {
 
     for(int i=0;i<rows;i++){
     int y=HEADER_HEIGHT+i*ROW_HEIGHT;
+    String minlen = "";
     drawString5x7(0,y,departures[i].line,getLineColor(departures[i].product));
-    drawScrollingString(20,y,departures[i].destination,display->color565(200,200,200),rowScroll[i]);
-    drawString5x7(110,y,String(departures[i].minutes),display->color565(255,255,255));
+    drawScrollingString(20,y,departures[i].destination.substring(0,15),display->color565(200,200,200),rowScroll[i]);  //.substring(0,15)
+    minlen=departures[i].minutes;
+    if (departures[i].minutes <1) {
+           drawString5x7(122-((minlen.length()-1)*6),y,String(departures[i].minutes),display->color565(255,0,0));
+    }
+    else {
+           drawString5x7(122-((minlen.length()-1)*6),y,String(departures[i].minutes),display->color565(255,255,255));
+    }       
   }
 
   if(hasWarning){
-    drawScrollingString(
-      0,
-      HEADER_HEIGHT+2*ROW_HEIGHT,
-      warningText,
-      display->color565(255,120,0),
-      warningScroll
-    );
+    drawScrollingString(0,HEADER_HEIGHT+2*ROW_HEIGHT,warningText,display->color565(255,120,0),warningScroll);
   }
 
 }
@@ -464,13 +615,13 @@ void setup() {
   mxconfig.gpio.clk = CLK_PIN;
   mxconfig.gpio.lat = LAT_PIN;
   mxconfig.gpio.oe  = OE_PIN;
-//  mxconfig.latch_blanking = 4;
+  // mxconfig.latch_blanking = 4;
   mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
   mxconfig.clkphase = false; 
 
   display = new MatrixPanel_I2S_DMA(mxconfig);
   display->begin();
-  display->setBrightness8(50);
+  display->setBrightness8(30);
 
   Serial.println("[DEBUG] Display initialisiert");
 
@@ -522,6 +673,7 @@ unsigned long lastFetch  = 0;
 void loop() {
   if(millis() - lastFetch > 30000) { fetchDepartures(); lastFetch=millis(); }
   if(millis() - lastClock > 10000) { drawScreen(); lastClock = millis(); }
-  // if(millis() - lastUpdate > 30000){ drawScreen(); lastUpdate = millis(); }
+  if(millis() - lastUpdate > 300){ drawScreen(); lastUpdate = millis(); }
+  display->flipDMABuffer();
   delay(50);
 }
