@@ -674,6 +674,6 @@ void loop() {
   if(millis() - lastFetch > 30000) { fetchDepartures(); lastFetch=millis(); }
   if(millis() - lastClock > 10000) { drawScreen(); lastClock = millis(); }
   if(millis() - lastUpdate > 300){ drawScreen(); lastUpdate = millis(); }
-  display->flipDMABuffer();
   delay(50);
+
 }
