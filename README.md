@@ -10,8 +10,8 @@ BVG Abfahrtsanzeiger aus 2 LED Matrix Displays 64x32 mit HUB75 Schnittstelle und
 
 WIP
 ToDo:
-- Lange Namen scrollen
-- Falls vorhanden Infos/Warnungen in unterster Zeile scrollen
+- ~~Lange Namen scrollen~~
+- ~~Falls vorhanden Warnungen in unterster Zeile scrollen~~
 
 
 
